@@ -328,3 +328,17 @@ ASALocalRun/
 
 # MFractors (Xamarin productivity tool) working folder 
 .mfractor/
+scripthook/types.h
+scripthook/ScriptHookV.lib
+scripthook/natives.h
+scripthook/nativeCaller.h
+scripthook/main.h
+scripthook/enums.h
+SDK/sdk.h
+SDK/log.h
+SDK/json.h
+SDK/gamehook.lib
+vs_static.h
+ps_output.h
+ps_noflow.h
+ps_flow.h
