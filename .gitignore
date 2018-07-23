@@ -342,3 +342,4 @@ vs_static.h
 ps_output.h
 ps_noflow.h
 ps_flow.h
+lib*/*.hk

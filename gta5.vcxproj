@@ -124,6 +124,9 @@
       <Outputs>$(GameDir)\Grand Theft Auto V\$(TargetFileName)</Outputs>
       <Inputs>$(TargetPath)</Inputs>
     </CustomBuildStep>
+    <PostBuildEvent>
+      <Command>copy /Y $(TargetPath) $(SolutionDir)lib64\</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -156,6 +159,9 @@
       <AdditionalDependencies>gamehook.lib;ScriptHookV.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(OutDir)</AdditionalLibraryDirectories>
     </Link>
+    <PostBuildEvent>
+      <Command>copy /Y $(TargetPath) $(SolutionDir)lib64\</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="gta5.cpp" />

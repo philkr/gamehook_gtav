@@ -124,12 +124,20 @@ struct GTA5 : public GameController {
 				}
 			}
 		}
-		if (shader->type() == Shader::PIXEL && hasCBuffer(shader, "misc_globals")) {
-			// Inject the shader output
-			return ps_output_shader;
-		}
-		if (shader->type() == Shader::PIXEL && hasTexture(shader, "BackBufferTexture")) {
-			final_shader.insert(shader->hash());
+		if (shader->type() == Shader::PIXEL) {
+			// prior to v1.0.1365.1
+			if (hasTexture(shader, "BackBufferTexture")) {
+				final_shader.insert(shader->hash());
+			}
+			// v1.0.1365.1 and newer
+			if (hasTexture(shader, "SSLRSampler") && hasTexture(shader, "HDRSampler")) {
+				// Other candidate textures include "MotionBlurSampler", "BlurSampler", but might depend on graphics settings
+				final_shader.insert(shader->hash());
+			}
+			if (hasCBuffer(shader, "misc_globals")) {
+				// Inject the shader output
+				return ps_output_shader;
+			}
 		}
 		return nullptr;
 	}
