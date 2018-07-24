@@ -51,31 +51,7 @@ struct Vec3f {
 std::string toJSON(const Vec3f & v);
 
 struct Quaternion {
-	static Quaternion fromMatrix(const float4x4 & m) {
-		int k0, k1, k2, k3;
-		float s0, s1, s2;
-		if (m[0][0] + m[1][1] + m[2][2] > 0.f) {
-			k0 = 3; k1 = 2; k2 = 1; k3 = 0;
-			s0 = s1 = s2 = 1.f;
-		} else if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
-			k0 = 0; k1 = 1; k2 = 2; k3 = 3;
-			s0 = 1.f; s1 = s2 = -1.f;
-		} else if (m[1][1] > m[2][2]) {
-			k0 = 1; k1 = 0; k2 = 3; k3 = 2;
-			s1 = 1.f; s0 = s2 = -1.f;
-		} else {
-			k0 = 2; k1 = 3; k2 = 0; k3 = 1;
-			s0 = s1 = -1.f; s2 = 1.f;
-		}
-		float t = s0 * m[0][0] + s1 * m[1][1] + s2 * m[2][2] + 1.f;
-		float s = 0.5f / sqrt(t);
-		float q[4] = { 0 };
-		q[k0] = s * t;
-		q[k1] = s * (m[0][1] - s2 * m[1][0]);
-		q[k2] = s * (m[2][0] - s1 * m[0][2]);
-		q[k3] = s * (m[1][2] - s0 * m[2][1]);
-		return { q[0], q[1], q[2], q[3] };
-	}
+	static Quaternion fromMatrix(const float4x4 & m);
 	float x, y, z, w;
 	bool operator==(const Quaternion & o) const {
 		return x == o.x && y == o.y && z == o.z && w == o.w;

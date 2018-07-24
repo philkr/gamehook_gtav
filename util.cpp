@@ -157,3 +157,36 @@ float4x4::operator bool() const {
 			return true;
 	return false;
 }
+
+Quaternion Quaternion::fromMatrix(const float4x4 & m) {
+#define NRM(v) sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2])
+	// Some rage matrices contain a scaling factor, which leads to a wrong quaternion if not corrected for
+	float sx = 1./NRM(m[0]), sy = 1. / NRM(m[1]), sz = 1. / NRM(m[2]);
+#undef NRM
+	int k0, k1, k2, k3;
+	float s0, s1, s2;
+	if (m[0][0] * sx + m[1][1] * sy + m[2][2] * sz > 0.f) {
+		k0 = 3; k1 = 2; k2 = 1; k3 = 0;
+		s0 = s1 = s2 = 1.f;
+	}
+	else if (m[0][0] * sx > m[1][1] * sy && m[0][0] * sx > m[2][2] * sz) {
+		k0 = 0; k1 = 1; k2 = 2; k3 = 3;
+		s0 = 1.f; s1 = s2 = -1.f;
+	}
+	else if (m[1][1] * sy > m[2][2] * sz) {
+		k0 = 1; k1 = 0; k2 = 3; k3 = 2;
+		s1 = 1.f; s0 = s2 = -1.f;
+	}
+	else {
+		k0 = 2; k1 = 3; k2 = 0; k3 = 1;
+		s0 = s1 = -1.f; s2 = 1.f;
+	}
+	float t = s0 * m[0][0] * sx + s1 * m[1][1] * sy + s2 * m[2][2] * sz + 1.f;
+	float s = 0.5f / sqrt(t);
+	float q[4] = { 0 };
+	q[k0] = s * t;
+	q[k1] = s * (m[0][1] * sx - s2 * m[1][0] * sy);
+	q[k2] = s * (m[2][0] * sz - s1 * m[0][2] * sx);
+	q[k3] = s * (m[1][2] * sy - s0 * m[2][1] * sz);
+	return { q[0], q[1], q[2], q[3] };
+}
