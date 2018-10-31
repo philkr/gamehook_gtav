@@ -11,41 +11,20 @@ inline __m128 operator-(const __m128 & a, float b) { return _mm_sub_ps(a, _mm_se
 inline __m128 operator*(const __m128 & a, float b) { return _mm_mul_ps(a, _mm_set_ps1(b)); }
 inline __m128 operator/(const __m128 & a, float b) { return _mm_div_ps(a, _mm_set_ps1(b)); }
 
-CBufferVariable::CBufferVariable(const std::string & cbuffer_name, const std::string & variable_name, size_t size) :cbuffer_name(cbuffer_name), variable_name(variable_name) {
-	if (size) {
-		offset_ = { 0 };
-		size_ = { size };
-	}
-}
-
-CBufferVariable::CBufferVariable(const std::string & cbuffer_name, const std::string & variable_name, const std::vector<size_t> & offset, const std::vector<size_t> & size) :cbuffer_name(cbuffer_name), variable_name(variable_name), offset_(offset), size_(size) {
-}
-
-bool CBufferVariable::scan(std::shared_ptr<Shader> s) {
-	if (position_hash_.count(s->hash())) return true;
+CBufferLocation CBufferLocation::scan(std::shared_ptr<Shader> s, const std::string & cbuffer_name, const std::string & variable_name, uint32_t size) {
 	for (const auto & cb : s->cbuffers())
 		if (!cbuffer_name.size() || cb.name == cbuffer_name)
 			for (const auto & v : cb.variables)
 				if (!variable_name.size() || v.name == variable_name) {
-					position_hash_[s->hash()] = { cb.bind_point, v.offset };
-					return true;
+					return { cb.bind_point, v.offset, size };
 				}
-	return false;
+	return CBufferLocation();
+}
+std::shared_ptr<GPUMemory> CBufferLocation::fetch(GameController * c, const std::vector<Buffer> & cbuffers, bool immediate) const {
+	if (bind_point >= cbuffers.size()) return std::shared_ptr<GPUMemory>();
+	return c->readBuffer(cbuffers[bind_point], { offset }, { size }, immediate);
 }
 
-bool CBufferVariable::has(const ShaderHash & h) {
-	return position_hash_.count(h);
-}
-
-std::shared_ptr<GPUMemory> CBufferVariable::fetch(GameController * c, const ShaderHash & h, const std::vector<Buffer> & cbuffers, bool immediate) const {
-	auto i = position_hash_.find(h);
-	if (size_.size() && i != position_hash_.end() && i->second.bind_point < cbuffers.size()) {
-		std::vector<size_t> o = offset_;
-		for (auto & j : o) j += i->second.offset;
-		return c->readBuffer(cbuffers[i->second.bind_point], o, size_, immediate);
-	}
-	return std::shared_ptr<GPUMemory>();
-}
 
 template<typename T>
 bool has(const std::vector<T> & b, const std::string & name) {
@@ -161,7 +140,7 @@ float4x4::operator bool() const {
 Quaternion Quaternion::fromMatrix(const float4x4 & m) {
 #define NRM(v) sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2])
 	// Some rage matrices contain a scaling factor, which leads to a wrong quaternion if not corrected for
-	float sx = 1./NRM(m[0]), sy = 1. / NRM(m[1]), sz = 1. / NRM(m[2]);
+	float sx = 1.f / NRM(m[0]), sy = 1.f / NRM(m[1]), sz = 1.f / NRM(m[2]);
 #undef NRM
 	int k0, k1, k2, k3;
 	float s0, s1, s2;

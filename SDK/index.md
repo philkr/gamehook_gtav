@@ -1,3 +1,3 @@
 # Gamehook SDK
 
-Copy the GameHook SDK header files and `gamehook.lib` here.
+Copy or symlink the GameHook SDK header files and `gamehook.lib` here.

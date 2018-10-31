@@ -52,6 +52,21 @@
     <ClInclude Include="..\..\SDK\sdk.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\gamehook\SDK\json.h">
+      <Filter>SDK</Filter>
+    </ClInclude>
+    <ClInclude Include="..\gamehook\SDK\log.h">
+      <Filter>SDK</Filter>
+    </ClInclude>
+    <ClInclude Include="..\gamehook\SDK\sdk.h">
+      <Filter>SDK</Filter>
+    </ClInclude>
+    <ClInclude Include="..\gamehook\SDK\shader.h">
+      <Filter>SDK</Filter>
+    </ClInclude>
+    <ClInclude Include="..\gamehook\SDK\types.h">
+      <Filter>SDK</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="ps_output.hlsl">

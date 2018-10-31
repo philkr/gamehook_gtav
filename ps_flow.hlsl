@@ -1,3 +1,5 @@
+#pragma warning( disable : 4008 )
+
 Texture2D<float> prev_disp: register(t1);
 Texture2D<float4> flow_disp: register(t0);
 

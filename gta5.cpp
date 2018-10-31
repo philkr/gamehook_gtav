@@ -55,52 +55,74 @@ const size_t WHEEL_SIZE = RAGE_MAT_SIZE + 2 * sizeof(float4x4);
 const size_t BONE_MTX_SIZE = 255 * 4 * 3 * sizeof(float);
 
 struct GTA5 : public GameController {
+	struct VSInfo {
+		enum ObjectType {
+			UNKNOWN = 0,
+			VEHICLE = 1,
+			WHEEL = 2,
+			TREE = 3,
+			PEDESTRIAN = 4,
+			BONE_MTX = 5,
+			PLAYER = 6,
+		};
+		ObjectType type = UNKNOWN;
+		CBufferLocation rage_matrices, wheel_matrices, rage_bonemtx;
+		std::shared_ptr<Shader> ovrride;
+	};
+	struct PSInfo {
+		bool is_final = false;
+		std::shared_ptr<Shader> ovrride;
+	};
+
 	GTA5() : GameController() {
 	}
 	virtual bool keyDown(unsigned char key, unsigned char special_status) {
 		return false;
 	}
-	virtual std::vector<ProvidedTarget> providedTargets() const override {
-		return { {"albedo"}, {"final"}, { "prev_disp", TargetType::R32_FLOAT, true } };
+	virtual void onInitialize() {
+		// Add all copy targets
+		addTarget("albedo");
+		addTarget("final");
+		addTarget("prev_disp", TargetType::R32_FLOAT, true);
+
+		// Add all new targets
+		addCustomTarget("flow_disp", TargetType::R32G32B32A32_FLOAT, true);
+		addCustomTarget("flow", TargetType::R32G32_FLOAT);
+		addCustomTarget("disparity", TargetType::R32_FLOAT);
+		addCustomTarget("occlusion", TargetType::R32_FLOAT);
+		addCustomTarget("object_id", TargetType::R32_UINT);
 	}
-	virtual std::vector<ProvidedTarget> providedCustomTargets() const {
-		// Write the disparity into a custom render target (this name needs to match the injection shader buffer name!)
-		return { {"flow_disp", TargetType::R32G32B32A32_FLOAT, true}, { "flow", TargetType::R32G32_FLOAT}, { "disparity", TargetType::R32_FLOAT },{ "occlusion", TargetType::R32_FLOAT }, { "object_id", TargetType::R32_UINT } };
-	}
-	CBufferVariable rage_matrices = { "rage_matrices", "gWorld", {0}, {4*16*sizeof(float)} }, wheel_matrices = { "matWheelBuffer", "matWheelWorld",{ 0 },{ 32 * sizeof(float) } }, rage_bonemtx = { "rage_bonemtx", "gBoneMtx",{ 0 },{ BONE_MTX_SIZE } };
-	enum ObjectType {
-		UNKNOWN=0,
-		VEHICLE=1,
-		WHEEL=2,
-		TREE=3,
-		PEDESTRIAN=4,
-		BONE_MTX=5,
-		PLAYER=6,
-	};
-	std::unordered_map<ShaderHash, ObjectType> object_type;
-	std::unordered_set<ShaderHash> final_shader;
-	std::shared_ptr<Shader> vs_static_shader = Shader::create(ByteCode(VS_STATIC, VS_STATIC + sizeof(VS_STATIC))),
-		ps_output_shader = Shader::create(ByteCode(PS_OUTPUT, PS_OUTPUT + sizeof(PS_OUTPUT)), { { "SV_Target6", "flow_disp" }, { "SV_Target7", "object_id" } }),
+	std::unordered_map<ShaderHash, VSInfo> vs_info;
+	std::unordered_map<ShaderHash, PSInfo> ps_info;
+	VSInfo current_vs;
+	PSInfo current_ps;
+
+	std::shared_ptr<Shader> ps_output_shader = Shader::create(ByteCode(PS_OUTPUT, PS_OUTPUT + sizeof(PS_OUTPUT)), { { "SV_Target6", "flow_disp" }, { "SV_Target7", "object_id" } }),
 		flow_shader = Shader::create(ByteCode(PS_FLOW, PS_FLOW + sizeof(PS_FLOW)), { { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" } }),
 		noflow_shader = Shader::create(ByteCode(PS_NOFLOW, PS_NOFLOW + sizeof(PS_NOFLOW)), { { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" } });
+
 	std::unordered_set<ShaderHash> int_position = { ShaderHash("d05510b7:0d9c59d0:612cd23a:f75d5ebd"), ShaderHash("c59148c8:e2f1a5ad:649bb9c7:30454a34"), ShaderHash("8a028f64:80694472:4d55d5dd:14c329f2"), ShaderHash("53a6e156:ff48c806:433fc787:c150b034"), ShaderHash("86de7f78:3ecdef51:f1c6f9e3:c5e6338f"), ShaderHash("f37799c8:b304710d:3296b36c:46ea12d4"), ShaderHash("4b031811:b6bf1c7f:ef4cd0c1:56541537") };
-	virtual std::shared_ptr<Shader> injectShader(std::shared_ptr<Shader> shader) {
+
+	virtual void onCreateShader(std::shared_ptr<Shader> shader) override {
+		//CBufferVariable rage_matrices = { "rage_matrices", "gWorld", {0}, {4 * 16 * sizeof(float)} }, wheel_matrices = { "matWheelBuffer", "matWheelWorld",{ 0 },{ 32 * sizeof(float) } }, rage_bonemtx = { "rage_bonemtx", "gBoneMtx",{ 0 },{ BONE_MTX_SIZE } };
+
 		if (shader->type() == Shader::VERTEX) {
-			bool has_rage_matrices = rage_matrices.scan(shader);
-			if (has_rage_matrices) {
-				bool has_wheel = wheel_matrices.scan(shader);
-				bool has_rage_bonemtx = rage_bonemtx.scan(shader);
-				ObjectType ot;
-				if (has_wheel)
-					object_type[shader->hash()] = ot = WHEEL;
+			VSInfo info;
+			info.rage_matrices = CBufferLocation::scan(shader, "rage_matrices", "gWorld", 4 * 16 * sizeof(float));
+			if (info.rage_matrices) {
+				info.wheel_matrices = CBufferLocation::scan(shader, "matWheelBuffer", "matWheelWorld", 32 * sizeof(float));
+				info.rage_bonemtx   = CBufferLocation::scan(shader, "rage_bonemtx", "gBoneMtx", BONE_MTX_SIZE);
+
+				if (info.wheel_matrices)
+					info.type = VSInfo::WHEEL;
 				else if (hasCBuffer(shader, "vehicle_globals") && hasCBuffer(shader, "vehicle_damage_locals"))
-					object_type[shader->hash()] = ot = VEHICLE;
+					info.type = VSInfo::VEHICLE;
 				else if (hasCBuffer(shader, "trees_common_locals"))
-					object_type[shader->hash()] = ot = TREE;
+					info.type = VSInfo::TREE;
 				else if (hasCBuffer(shader, "ped_common_shared_locals"))
-					object_type[shader->hash()] = ot = PEDESTRIAN;
-				else if (has_rage_bonemtx)
-					object_type[shader->hash()] = ot = BONE_MTX;
+					info.type = VSInfo::PEDESTRIAN;
+				else if (info.rage_bonemtx)
+					info.type = VSInfo::BONE_MTX;
 
 				bool can_inject = true;
 				for (const auto & b : shader->cbuffers())
@@ -113,36 +135,59 @@ struct GTA5 : public GameController {
 					auto r = shader->subset({ "SV_Position" });
 					r->renameOutput("SV_Position", "PREV_POSITION");
 					r->renameCBuffer("rage_matrices", "prev_rage_matrices");
-					if (ot == WHEEL)
+					if (info.wheel_matrices)
 						r->renameCBuffer("matWheelBuffer", "prev_matWheelBuffer", 5);
-					if (ot == PEDESTRIAN || ot == BONE_MTX)
+					if (info.rage_bonemtx)
 						r->renameCBuffer("rage_bonemtx", "prev_rage_bonemtx", 5);
-					// TODO: Handle characters properly
-					return r;
-
-					return vs_static_shader;
+					info.ovrride = shader->append(r);
+					vs_info[shader->hash()] = info;
 				}
 			}
 		}
 		if (shader->type() == Shader::PIXEL) {
+			PSInfo info;
 			// prior to v1.0.1365.1
 			if (hasTexture(shader, "BackBufferTexture")) {
-				final_shader.insert(shader->hash());
+				info.is_final = true;
+				ps_info[shader->hash()] = info;
 			}
 			// v1.0.1365.1 and newer
 			if (hasTexture(shader, "SSLRSampler") && hasTexture(shader, "HDRSampler")) {
 				// Other candidate textures include "MotionBlurSampler", "BlurSampler", but might depend on graphics settings
-				final_shader.insert(shader->hash());
+				info.is_final = true;
+				ps_info[shader->hash()] = info;
 			}
 			if (hasCBuffer(shader, "misc_globals")) {
 				// Inject the shader output
-				return ps_output_shader;
+				info.ovrride = shader->append(ps_output_shader);
+				ps_info[shader->hash()] = info;
 			}
 		}
-		return nullptr;
 	}
-
-	virtual void postProcess(uint32_t frame_id) override {
+	virtual void onBindShader(std::shared_ptr<Shader> shader) {
+		if (shader->type() == Shader::VERTEX) {
+			auto i = vs_info.find(shader->hash());
+			if (i != vs_info.end()) {
+				current_vs = i->second;
+				if (current_vs.ovrride)
+					bindShader(current_vs.ovrride);
+			} else {
+				current_vs = VSInfo();
+			}
+		}
+		if (shader->type() == Shader::PIXEL) {
+			auto i = ps_info.find(shader->hash());
+			if (i != ps_info.end()) {
+				current_ps = i->second;
+				if (current_ps.ovrride)
+					bindShader(current_ps.ovrride);
+			}
+			else {
+				current_ps = PSInfo();
+			}
+		}
+	}
+	virtual void onPostProcess(uint32_t frame_id) override {
 
 		if (currentRecordingType() != NONE) {
 			// Estimate the projection matrix (or at least a subset of it's values)
@@ -161,7 +206,7 @@ struct GTA5 : public GameController {
 			float c = det * (b0 * A11 - b1 * A10), e = det * (b1 * A00 - b0 * A10);
 
 			// The camera params either change, or there is a ceratin degree of numerical instability (and fov changes, but setting the camera properly is hard ;( )
-			float disp_ab[2] = { 6., 4e-5 }; // { -d / e, -c / d };
+			float disp_ab[2] = { 6.f, 4e-5f }; // { -d / e, -c / d };
 			// LOG(INFO) << "disp_ab " << -d / e << " " << -c / d;
 			disparity_correction->set((const float*)disp_ab, 2, 0 * sizeof(float));
 			bindCBuffer(disparity_correction);
@@ -183,7 +228,7 @@ struct GTA5 : public GameController {
 	uint32_t current_frame_id = 1, wheel_count = 0;
 
 	size_t TS = 0;
-	virtual void startFrame(uint32_t frame_id) override {
+	virtual void onBeginFrame(uint32_t frame_id) override {
 		start_time = time();
 
 		main_render_pass = 2;
@@ -204,7 +249,7 @@ struct GTA5 : public GameController {
 		avg_world_view_proj = 0;
 		TS = 0;
 	}
-	virtual void endFrame(uint32_t frame_id) override {
+	virtual void onEndFrame(uint32_t frame_id) override {
 		if (currentRecordingType() != NONE) {
 			mul(&prev_view_proj, avg_world.affine_inv(), avg_world_view_proj);
 			mul(&prev_view, avg_world.affine_inv(), avg_world_view);
@@ -217,20 +262,13 @@ struct GTA5 : public GameController {
 		}
 	}
 	RenderTargetView albedo_output;
-	virtual DrawType startDraw(const DrawInfo & info) override {
-		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2 && info.type == DrawInfo::INDEX && info.instances == 0) {
-			bool has_rage_matrices = rage_matrices.has(info.vertex_shader);
-			ObjectType type = UNKNOWN;
-			{
-				auto i = object_type.find(info.vertex_shader);
-				if (i != object_type.end())
-					type = i->second;
-			}
-			if (has_rage_matrices && main_render_pass > 0) {
-				std::shared_ptr<GPUMemory> wp = rage_matrices.fetch(this, info.vertex_shader, info.vs_cbuffers, true);
+	virtual void onBeginDraw(const DrawInfo & info) override {
+		if ((currentRecordingType() != NONE) && info.target.outputs.size() && info.target.outputs[0].W == defaultWidth() && info.target.outputs[0].H == defaultHeight() && info.target.outputs.size() >= 2 && info.type == DrawInfo::INDEX && info.instances == 0) {
+			if (current_vs.rage_matrices && main_render_pass > 0) {
+				std::shared_ptr<GPUMemory> wp = current_vs.rage_matrices.fetch(this, info.buffer.vertex_constant, true);
 				if (main_render_pass == 2) {
 					// Starting the main render pass
-					albedo_output = info.outputs[0];
+					albedo_output = info.target.outputs[0];
 					main_render_pass = 1;
 				}
 				if (main_render_pass == 1) {
@@ -243,15 +281,15 @@ struct GTA5 : public GameController {
 						mul(&prev_rage[1], rage_mat[0], prev_view);
 
 						// Sum up the world and world_view_proj matrices to later compute the view_proj matrix
-						if (type != PEDESTRIAN && type != PLAYER) {
+						if (current_vs.type != VSInfo::PEDESTRIAN && current_vs.type != VSInfo::PLAYER) {
 							// There is a 'BUG' (or feature) in GTA V that doesn't draw Franklyn correctly in first person view (rage_mat are wrong)
 							add(&avg_world, avg_world, rage_mat[0]);
 							add(&avg_world_view, avg_world_view, rage_mat[1]);
 							add(&avg_world_view_proj, avg_world_view_proj, rage_mat[2]);
 						}
 
-						if (type == WHEEL && last_vehicle) {
-							std::shared_ptr<GPUMemory> wm = wheel_matrices.fetch(this, info.vertex_shader, info.vs_cbuffers, true);
+						if (current_vs.type == VSInfo::WHEEL && last_vehicle) {
+							std::shared_ptr<GPUMemory> wm = current_vs.wheel_matrices.fetch(this, info.buffer.vertex_constant, true);
 							if (wm && wm->size() >= 2 * sizeof(float4x4)) {
 								if (last_vehicle->cur_wheels.size() <= wheel_count)
 									last_vehicle->cur_wheels.resize(wheel_count + 1);
@@ -269,8 +307,8 @@ struct GTA5 : public GameController {
 						} else if (tracker) {
 							// Determine the GTA type for search
 							TrackedFrame::ObjectType gta_type = TrackedFrame::UNKNOWN;
-							if (type == PEDESTRIAN) gta_type = TrackedFrame::PED;
-							if (type == VEHICLE) gta_type = TrackedFrame::VEHICLE;
+							if (current_vs.type == VSInfo::PEDESTRIAN) gta_type = TrackedFrame::PED;
+							if (current_vs.type == VSInfo::VEHICLE) gta_type = TrackedFrame::VEHICLE;
 
 							Vec3f v = { rage_mat[0].d[3][0], rage_mat[0].d[3][1], rage_mat[0].d[3][2] };
 							
@@ -285,7 +323,6 @@ struct GTA5 : public GameController {
 								std::shared_ptr<TrackData> track = std::dynamic_pointer_cast<TrackData>(object->private_data);
 								if (!track) // Create a track if the object is new
 									object->private_data = track = std::make_shared<TrackData>();
-								if (object->type() == TrackedFrame::PLAYER) type = PLAYER;
 								// Advance a tracked frame
 								if (track->last_frame < current_frame_id) {
 
@@ -305,17 +342,18 @@ struct GTA5 : public GameController {
 									track->last_frame = current_frame_id;
 								}
 								// Update the bone_mtx
-								if (type == PEDESTRIAN || type == BONE_MTX) {
-									std::shared_ptr<GPUMemory> bm = rage_bonemtx.fetch(this, info.vertex_shader, info.vs_cbuffers, true);
+								if (current_vs.rage_bonemtx) {
+									std::shared_ptr<GPUMemory> bm = current_vs.rage_bonemtx.fetch(this, info.buffer.vertex_constant, true);
 									if (bm) {
-										if (!track->cur_bones.count(info.vertex_buffer.id)) {
-											memcpy(&track->cur_bones[info.vertex_buffer.id], bm->data(), sizeof(TrackData::BoneData));
+										if (!track->cur_bones.count(info.buffer.vertex.id)) {
+											memcpy(&track->cur_bones[info.buffer.vertex.id], bm->data(), sizeof(TrackData::BoneData));
 											TS += sizeof(TrackData::BoneData);
 										} else if (0) {
-											if (memcmp(&track->cur_bones[info.vertex_buffer.id], bm->data(), sizeof(TrackData::BoneData))) {
-												LOG(WARN) << "Bone matrix changed for object " << info.pixel_shader << " " << info.vertex_shader << " " << info.vertex_buffer.id;
+											if (memcmp(&track->cur_bones[info.buffer.vertex.id], bm->data(), sizeof(TrackData::BoneData))) {
+												LOG(WARN) << "Bone matrix changed for object " << info.shader.pixel << " " << info.shader.vertex << " " << info.buffer.vertex.id;
 												LOG(INFO) << object->type() << " " << object->id;
-												return HIDE;
+												hideDraw();
+												return;
 											}
 										}
 									}
@@ -325,22 +363,24 @@ struct GTA5 : public GameController {
 									memcpy(prev_rage, &track->prev_rage, sizeof(prev_rage));
 
 								// Set the prior bone mtx
-								if (type == PEDESTRIAN || type == BONE_MTX) {
-									if (track->prev_bones.count(info.vertex_buffer.id))
-										prev_rage_bonemtx->set(track->prev_bones[info.vertex_buffer.id]);
-									else if (track->cur_bones.count(info.vertex_buffer.id))
-										prev_rage_bonemtx->set(track->cur_bones[info.vertex_buffer.id]);
+								if (current_vs.rage_bonemtx) {
+									if (track->prev_bones.count(info.buffer.vertex.id))
+										prev_rage_bonemtx->set(track->prev_bones[info.buffer.vertex.id]);
+									else if (track->cur_bones.count(info.buffer.vertex.id))
+										prev_rage_bonemtx->set(track->cur_bones[info.buffer.vertex.id]);
 									bindCBuffer(prev_rage_bonemtx);
 								}
 
 								track->id = id = MAX_UNTRACKED_OBJECT_ID + object->id;
-								if (type == VEHICLE) {
+								if (current_vs.type == VSInfo::VEHICLE) {
 									last_vehicle = track;
 									wheel_count = 0;
 								}
 							}
-							else if (type == PEDESTRIAN) {
-								return HIDE;
+							else if (current_vs.type == VSInfo::PEDESTRIAN) {
+								// Untracked Ped
+								hideDraw();
+								return;
 							}
 						}
 						prev_buffer->set((float4x4*)prev_rage, 4, 0);
@@ -348,7 +388,6 @@ struct GTA5 : public GameController {
 
 						id_buffer->set(id);
 						bindCBuffer(id_buffer);
-						return RIGID;
 					}
 				}
 			}
@@ -357,15 +396,14 @@ struct GTA5 : public GameController {
 			copyTarget("albedo", albedo_output);
 			main_render_pass = 0;
 		}
-		return DEFAULT;
 	}
-	virtual void endDraw(const DrawInfo & info) override {
-		if (final_shader.count(info.pixel_shader)) {
+	virtual void onEndDraw(const DrawInfo & info) override {
+		if (current_ps.is_final) {
 			// Draw the final image (right before the image is distorted)
-			copyTarget("final", info.outputs[0]);
+			copyTarget("final", info.target.outputs[0]);
 		}
 	}
-	virtual std::string gameState() const override {
+	virtual std::string provideGameState() const override {
 		if (tracker)
 			return toJSON(tracker->info);
 		return "";

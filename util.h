@@ -3,20 +3,13 @@
 #include <unordered_map>
 #include "sdk.h"
 
-struct CBufferVariable {
-	struct Location {
-		uint32_t bind_point, offset;
-	};
-	std::string cbuffer_name, variable_name;
-	std::vector<size_t> offset_, size_;
-	std::unordered_map<ShaderHash, Location> position_hash_;
-	CBufferVariable(const std::string & cbuffer_name, const std::string & variable_name, size_t size=0);
-	CBufferVariable(const std::string & cbuffer_name, const std::string & variable_name, const std::vector<size_t> & offset, const std::vector<size_t> & size);
-	bool scan(std::shared_ptr<Shader> s);
-	bool has(const ShaderHash & h);
-	
-	std::shared_ptr<GPUMemory> fetch(GameController * c, const ShaderHash & h, const std::vector<Buffer> & cbuffers, bool immediate = false) const;
+struct CBufferLocation {
+	uint32_t bind_point=0xffffffff, offset=0, size=0;
+	static CBufferLocation scan(std::shared_ptr<Shader> s, const std::string & cbuffer_name, const std::string & variable_name, uint32_t size);
+	std::shared_ptr<GPUMemory> fetch(GameController * c, const std::vector<Buffer> & cbuffers, bool immediate = false) const;
+	operator bool() const { return size; }
 };
+
 
 bool hasCBuffer(std::shared_ptr<Shader> s, const std::string & name);
 bool hasSBuffer(std::shared_ptr<Shader> s, const std::string & name);
