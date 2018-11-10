@@ -67,11 +67,11 @@ struct GTA5 : public GameController {
 		};
 		ObjectType type = UNKNOWN;
 		CBufferLocation rage_matrices, wheel_matrices, rage_bonemtx;
-		std::shared_ptr<Shader> ovrride;
+		std::shared_ptr<Shader> dflt, ovrride;
 	};
 	struct PSInfo {
 		bool is_final = false;
-		std::shared_ptr<Shader> ovrride;
+		std::shared_ptr<Shader> dflt, ovrride;
 	};
 
 	GTA5() : GameController() {
@@ -112,6 +112,7 @@ struct GTA5 : public GameController {
 			if (info.rage_matrices) {
 				info.wheel_matrices = CBufferLocation::scan(shader, "matWheelBuffer", "matWheelWorld", 32 * sizeof(float));
 				info.rage_bonemtx   = CBufferLocation::scan(shader, "rage_bonemtx", "gBoneMtx", BONE_MTX_SIZE);
+				info.dflt = shader;
 
 				if (info.wheel_matrices)
 					info.type = VSInfo::WHEEL;
@@ -146,6 +147,8 @@ struct GTA5 : public GameController {
 		}
 		if (shader->type() == Shader::PIXEL) {
 			PSInfo info;
+			info.dflt = shader;
+
 			// prior to v1.0.1365.1
 			if (hasTexture(shader, "BackBufferTexture")) {
 				info.is_final = true;
@@ -164,12 +167,13 @@ struct GTA5 : public GameController {
 			}
 		}
 	}
+	bool do_override = false;
 	virtual void onBindShader(std::shared_ptr<Shader> shader) {
 		if (shader->type() == Shader::VERTEX) {
 			auto i = vs_info.find(shader->hash());
 			if (i != vs_info.end()) {
 				current_vs = i->second;
-				if (current_vs.ovrride)
+				if (do_override && current_vs.ovrride)
 					bindShader(current_vs.ovrride);
 			} else {
 				current_vs = VSInfo();
@@ -179,12 +183,30 @@ struct GTA5 : public GameController {
 			auto i = ps_info.find(shader->hash());
 			if (i != ps_info.end()) {
 				current_ps = i->second;
-				if (current_ps.ovrride)
+				if (do_override && current_ps.ovrride)
 					bindShader(current_ps.ovrride);
 			}
 			else {
 				current_ps = PSInfo();
 			}
+		}
+	}
+	virtual void overrideShader() {
+		if (!do_override) {
+			do_override = true;
+			if (current_ps.ovrride)
+				bindShader(current_ps.ovrride);
+			if (current_vs.ovrride)
+				bindShader(current_vs.ovrride);
+		}
+	}
+	virtual void defaultShader() {
+		if (do_override) {
+			do_override = false;
+			if (current_ps.ovrride && current_ps.dflt)
+				bindShader(current_ps.dflt);
+			if (current_vs.ovrride && current_vs.dflt)
+				bindShader(current_vs.dflt);
 		}
 	}
 	virtual void onPostProcess(uint32_t frame_id) override {
@@ -210,7 +232,6 @@ struct GTA5 : public GameController {
 			// LOG(INFO) << "disp_ab " << -d / e << " " << -c / d;
 			disparity_correction->set((const float*)disp_ab, 2, 0 * sizeof(float));
 			bindCBuffer(disparity_correction);
-
 			if (currentRecordingType() == DRAW)
 				callPostFx(flow_shader);
 			else
@@ -248,6 +269,7 @@ struct GTA5 : public GameController {
 		avg_world_view = 0;
 		avg_world_view_proj = 0;
 		TS = 0;
+		defaultShader();
 	}
 	virtual void onEndFrame(uint32_t frame_id) override {
 		if (currentRecordingType() != NONE) {
@@ -270,6 +292,7 @@ struct GTA5 : public GameController {
 					// Starting the main render pass
 					albedo_output = info.target.outputs[0];
 					main_render_pass = 1;
+					overrideShader();
 				}
 				if (main_render_pass == 1) {
 					uint32_t id = 0;
@@ -318,7 +341,6 @@ struct GTA5 : public GameController {
 							if (gta_type == TrackedFrame::UNKNOWN) object = (*tracker)(v, Quaternion::fromMatrix(rage_mat[0]), 0.01f, 0.01f, gta_type);
 							else if (gta_type == TrackedFrame::PED) object = (*tracker)(v, Quaternion::fromMatrix(rage_mat[0]), 1.f, 10.f, gta_type);
 							else object = (*tracker)(v, Quaternion::fromMatrix(rage_mat[0]), 0.1f, 0.1f, TrackedFrame::UNKNOWN);
-
 							if (object) {
 								std::shared_ptr<TrackData> track = std::dynamic_pointer_cast<TrackData>(object->private_data);
 								if (!track) // Create a track if the object is new
@@ -395,6 +417,7 @@ struct GTA5 : public GameController {
 			// End of the main render pass
 			copyTarget("albedo", albedo_output);
 			main_render_pass = 0;
+			defaultShader();
 		}
 	}
 	virtual void onEndDraw(const DrawInfo & info) override {

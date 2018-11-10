@@ -31,5 +31,5 @@ void main(in float4 p: SV_POSITION, in float2 t : TEX_COORD, out float2 flow : S
 	if (f.z <= 0)
 		flow = 0. / 0.; // NaN
 	else
-		flow = float2(X-x, Y-y) - 0.5;
+		flow = float2(X - x, Y - y) - 0.5;
 }
