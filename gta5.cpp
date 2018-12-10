@@ -54,6 +54,16 @@ const size_t VEHICLE_SIZE = RAGE_MAT_SIZE;
 const size_t WHEEL_SIZE = RAGE_MAT_SIZE + 2 * sizeof(float4x4);
 const size_t BONE_MTX_SIZE = 255 * 4 * 3 * sizeof(float);
 
+
+struct RenderInfo {
+	uint32_t id;
+	BufferHash index_buffer, vertex_buffer;
+	ShaderHash vertex_shader, pixel_shader;
+	TextureHash texture;
+};
+TOJSON(RenderInfo, index_buffer, vertex_buffer, vertex_shader, pixel_shader, texture);
+
+
 struct GTA5 : public GameController {
 	struct VSInfo {
 		enum ObjectType {
@@ -94,6 +104,7 @@ struct GTA5 : public GameController {
 	}
 	std::unordered_map<ShaderHash, VSInfo> vs_info;
 	std::unordered_map<ShaderHash, PSInfo> ps_info;
+	std::vector<RenderInfo> render_info;
 	VSInfo current_vs;
 	PSInfo current_ps;
 
@@ -270,6 +281,7 @@ struct GTA5 : public GameController {
 		avg_world_view_proj = 0;
 		TS = 0;
 		defaultShader();
+		render_info.clear();
 	}
 	virtual void onEndFrame(uint32_t frame_id) override {
 		if (currentRecordingType() != NONE) {
@@ -408,6 +420,10 @@ struct GTA5 : public GameController {
 						prev_buffer->set((float4x4*)prev_rage, 4, 0);
 						bindCBuffer(prev_buffer);
 
+						if (!id) {
+							id = render_info.size() + 1;
+							render_info.push_back({id, info.buffer.index_hash, info.buffer.vertex_hash, info.shader.vertex, info.shader.pixel, info.shader.ps_texture_hash});
+						}
 						id_buffer->set(id);
 						bindCBuffer(id_buffer);
 					}
@@ -427,9 +443,10 @@ struct GTA5 : public GameController {
 		}
 	}
 	virtual std::string provideGameState() const override {
+		std::string state = "{ \"render_info\" : " + toJSON(render_info);
 		if (tracker)
-			return toJSON(tracker->info);
-		return "";
+			return state + "," + toJSON(tracker->info).substr(1);
+		return state + "}";
 	}
 	virtual bool stop() { return stopTracker(); }
 };
